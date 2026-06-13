@@ -35,6 +35,7 @@ type s3Client interface {
 var (
 	instance *Client
 	once     sync.Once
+	mu       sync.Mutex
 
 	// newClientFn is overridable in tests to avoid real AWS config loading.
 	newClientFn = newClient
@@ -83,6 +84,52 @@ func Initialize(cfg config.S3Config) error {
 	instance.checkBucketAccess(context.Background())
 
 	logrus.Infof("S3 storage initialized: bucket=%s, region=%s, endpoint=%s", cfg.Bucket, cfg.Region, cfg.Endpoint)
+	return nil
+}
+
+// Reinitialize resets the singleton S3 client and reinitializes with new config.
+// This is used for runtime configuration changes without requiring a server restart.
+// Thread-safe: uses mutex to prevent race conditions during reinitialization.
+func Reinitialize(cfg config.S3Config) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Reset singleton
+	instance = nil
+	once = sync.Once{}
+
+	// Reinitialize with new config
+	return Initialize(cfg)
+}
+
+// TestConnection tests an S3 configuration without affecting the singleton.
+// It creates a temporary client and checks bucket access.
+func TestConnection(ctx context.Context, cfg config.S3Config) error {
+	if !cfg.Enabled {
+		return nil
+	}
+	if cfg.Bucket == "" {
+		return fmt.Errorf("s3 bucket is required when S3 is enabled")
+	}
+	if cfg.AccessKey == "" || cfg.SecretKey == "" {
+		return fmt.Errorf("s3 access key and secret key are required when S3 is enabled")
+	}
+
+	client, err := newClientFn(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create S3 client: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, headTimeout)
+	defer cancel()
+
+	_, err = client.s3Client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(cfg.Bucket),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to access bucket %q: %w", cfg.Bucket, err)
+	}
+
 	return nil
 }
 
