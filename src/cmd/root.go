@@ -272,6 +272,12 @@ func initEnvConfig() {
 	if envS3PublicURL := viper.GetString("s3_public_url"); envS3PublicURL != "" {
 		config.S3.PublicURL = envS3PublicURL
 	}
+	if envS3RetryMax := viper.GetInt("s3_retry_max"); envS3RetryMax > 0 {
+		config.S3.RetryMax = envS3RetryMax
+	}
+	if envS3RetryWaitMs := viper.GetInt("s3_retry_wait_ms"); envS3RetryWaitMs > 0 {
+		config.S3.RetryWaitMs = envS3RetryWaitMs
+	}
 }
 
 func initFlags() {
@@ -585,6 +591,18 @@ func initFlags() {
 		"s3-public-url", "",
 		config.S3.PublicURL,
 		`S3 public URL base for generating accessible URLs --s3-public-url <string> | example: --s3-public-url="https://pub-your-account.r2.dev"`,
+	)
+	rootCmd.PersistentFlags().IntVarP(
+		&config.S3.RetryMax,
+		"s3-retry-max", "",
+		0,
+		`S3 upload retry attempts --s3-retry-max <int> | example: --s3-retry-max=5 (default: 3)`,
+	)
+	rootCmd.PersistentFlags().IntVarP(
+		&config.S3.RetryWaitMs,
+		"s3-retry-wait-ms", "",
+		0,
+		`S3 retry initial backoff in ms --s3-retry-wait-ms <int> | example: --s3-retry-wait-ms=500 (default: 250)`,
 	)
 }
 
