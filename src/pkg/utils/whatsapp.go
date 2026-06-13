@@ -20,6 +20,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/s3"
 	pkgError "github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/error"
 	"go.mau.fi/whatsmeow"
 )
@@ -504,8 +505,18 @@ func ExtractMedia(ctx context.Context, client *whatsmeow.Client, storageLocation
 	}
 
 	extension := determineMediaExtension(originalFilename, extractedMedia.MimeType)
+	filename := fmt.Sprintf("%d-%s%s", time.Now().Unix(), uuid.NewString(), extension)
 
-	extractedMedia.MediaPath = fmt.Sprintf("%s/%d-%s%s", storageLocation, time.Now().Unix(), uuid.NewString(), extension)
+	if s3.IsEnabled() {
+		s3URL, err := s3.Upload(ctx, data, filename, extractedMedia.MimeType)
+		if err != nil {
+			return extractedMedia, fmt.Errorf("failed to upload media to S3: %w", err)
+		}
+		extractedMedia.MediaPath = s3URL
+		return extractedMedia, nil
+	}
+
+	extractedMedia.MediaPath = fmt.Sprintf("%s/%s", storageLocation, filename)
 	err = os.WriteFile(extractedMedia.MediaPath, data, 0600)
 	if err != nil {
 		return extractedMedia, err

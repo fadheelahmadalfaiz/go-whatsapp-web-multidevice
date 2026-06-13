@@ -22,6 +22,7 @@ import (
 	domainSend "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/send"
 	domainUser "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/user"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/chatstorage"
+	s3storage "github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/s3"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/sqlite"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
@@ -244,6 +245,32 @@ func initEnvConfig() {
 	}
 	if viper.IsSet("chatwoot_message_delete") {
 		config.ChatwootMessageDelete = viper.GetBool("chatwoot_message_delete")
+	}
+
+	// S3 storage settings
+	if viper.IsSet("s3_enabled") {
+		config.S3.Enabled = viper.GetBool("s3_enabled")
+	}
+	if envS3Bucket := viper.GetString("s3_bucket"); envS3Bucket != "" {
+		config.S3.Bucket = envS3Bucket
+	}
+	if envS3Region := viper.GetString("s3_region"); envS3Region != "" {
+		config.S3.Region = envS3Region
+	}
+	if envS3AccessKey := viper.GetString("s3_access_key"); envS3AccessKey != "" {
+		config.S3.AccessKey = envS3AccessKey
+	}
+	if envS3SecretKey := viper.GetString("s3_secret_key"); envS3SecretKey != "" {
+		config.S3.SecretKey = envS3SecretKey
+	}
+	if envS3Endpoint := viper.GetString("s3_endpoint"); envS3Endpoint != "" {
+		config.S3.Endpoint = envS3Endpoint
+	}
+	if envS3Prefix := viper.GetString("s3_prefix"); envS3Prefix != "" {
+		config.S3.Prefix = envS3Prefix
+	}
+	if envS3PublicURL := viper.GetString("s3_public_url"); envS3PublicURL != "" {
+		config.S3.PublicURL = envS3PublicURL
 	}
 }
 
@@ -509,6 +536,56 @@ func initFlags() {
 		config.ChatwootMessageDelete,
 		`delete linked Chatwoot/WhatsApp messages when deletion is reported by the opposite side --chatwoot-message-delete <true/false> | example: --chatwoot-message-delete=true`,
 	)
+
+	// S3 storage flags
+	rootCmd.PersistentFlags().BoolVarP(
+		&config.S3.Enabled,
+		"s3-enabled", "",
+		config.S3.Enabled,
+		`enable S3-compatible object storage for media --s3-enabled <true/false> | example: --s3-enabled=true`,
+	)
+	rootCmd.PersistentFlags().StringVarP(
+		&config.S3.Bucket,
+		"s3-bucket", "",
+		config.S3.Bucket,
+		`S3 bucket name --s3-bucket <string> | example: --s3-bucket="my-whatsapp-media"`,
+	)
+	rootCmd.PersistentFlags().StringVarP(
+		&config.S3.Region,
+		"s3-region", "",
+		config.S3.Region,
+		`S3 region --s3-region <string> | example: --s3-region="auto" (for R2) or --s3-region="us-east-1" (for AWS)`,
+	)
+	rootCmd.PersistentFlags().StringVarP(
+		&config.S3.AccessKey,
+		"s3-access-key", "",
+		config.S3.AccessKey,
+		`S3 access key ID --s3-access-key <string>`,
+	)
+	rootCmd.PersistentFlags().StringVarP(
+		&config.S3.SecretKey,
+		"s3-secret-key", "",
+		config.S3.SecretKey,
+		`S3 secret access key --s3-secret-key <string>`,
+	)
+	rootCmd.PersistentFlags().StringVarP(
+		&config.S3.Endpoint,
+		"s3-endpoint", "",
+		config.S3.Endpoint,
+		`S3 custom endpoint URL for R2/MinIO --s3-endpoint <string> | example: --s3-endpoint="https://your-account.r2.cloudflarestorage.com"`,
+	)
+	rootCmd.PersistentFlags().StringVarP(
+		&config.S3.Prefix,
+		"s3-prefix", "",
+		config.S3.Prefix,
+		`S3 object key prefix --s3-prefix <string> | example: --s3-prefix="whatsapp-media/"`,
+	)
+	rootCmd.PersistentFlags().StringVarP(
+		&config.S3.PublicURL,
+		"s3-public-url", "",
+		config.S3.PublicURL,
+		`S3 public URL base for generating accessible URLs --s3-public-url <string> | example: --s3-public-url="https://pub-your-account.r2.dev"`,
+	)
 }
 
 func initChatStorage() (*sql.DB, error) {
@@ -542,6 +619,11 @@ func initApp() {
 	err := utils.CreateFolder(config.PathQrCode, config.PathSendItems, config.PathStorages, config.PathMedia)
 	if err != nil {
 		logrus.Errorln(err)
+	}
+
+	// Initialize S3 storage if enabled
+	if err := s3storage.Initialize(config.S3); err != nil {
+		logrus.Fatalf("failed to initialize S3 storage: %v", err)
 	}
 
 	ctx := context.Background()
